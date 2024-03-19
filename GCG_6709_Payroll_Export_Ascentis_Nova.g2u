@@ -1,0 +1,171 @@
+﻿Program.Sub.Preflight.Start
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+'Bryan Pham
+'04/22/2022
+'Call: SID010-101120210953-0
+'Scope: export payroll to Ascentis/Nova system
+
+F.Intrinsic.Control.Try
+	V.Local.sError.Declare
+	v.Local.iCnt.Declare
+	v.Local.sFilter.Declare
+	v.Local.fHours.Declare
+	
+Function.Intrinsic.UI.UsePixels ' Allows you to use Pixels instead of Twips throughout
+
+'dictionary for pay code. We need to convert GSS earnings code to their pay code
+f.Data.Datatable.Create("dtEC",true)
+f.Data.Datatable.AddColumn("dtEC","EC","String")
+f.Data.Datatable.AddColumn("dtEC","PayCode","String")
+f.Data.DataTable.AddRow("dtEC","EC","01","PayCode","51")
+f.Data.DataTable.AddRow("dtEC","EC","","PayCode","51")
+f.Data.DataTable.AddRow("dtEC","EC","02","PayCode","2")
+f.Data.DataTable.AddRow("dtEC","EC","03","PayCode","1")
+f.Data.DataTable.AddRow("dtEC","EC","04","PayCode","3")
+f.Data.DataTable.AddRow("dtEC","EC","05","PayCode","9")
+f.Data.DataTable.AddRow("dtEC","EC","06","PayCode","5")
+f.Data.DataTable.AddRow("dtEC","EC","07","PayCode","4")
+
+'transfer labor to payroll
+F.Intrinsic.Control.If(V.Caller.Hook,=,15290)
+	F.Intrinsic.Control.CallSub(loadData)
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("Project: {0}{1}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}{1}{1}GAB Version: {5}",V.Ambient.ScriptPath,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.End 
+F.Intrinsic.Control.EndTry
+Program.Sub.Main.End
+
+Program.Sub.loadData.Start
+F.Intrinsic.Control.Try
+V.Local.sError.Declare
+V.Local.sRunDate.Declare
+v.Local.sSQL.Declare
+v.Local.dDate.Declare
+v.Local.iCnt.Declare
+v.Local.fHours.Declare
+v.Local.fMin.Declare
+v.Local.fSec.Declare
+v.Local.sDate.Declare
+v.Local.sIn.Declare
+v.Local.sOut.Declare
+V.Local.sPath.Declare
+v.Local.sEmp.Declare
+v.Local.fTotalHours.Declare
+v.Local.sFilter.Declare
+v.Local.dBeg.Declare
+v.Local.dEnd.Declare
+V.Local.sRunTime.Declare
+v.Local.sTimeIn.Declare
+v.Local.sTimeOut.Declare
+
+'get the date from the process
+f.Intrinsic.Date.ConvertDString(v.Passed.BEGDATE,"YYYYMMDD",v.Local.dBeg)
+f.Intrinsic.Date.ConvertDString(v.Passed.ENDDATE,"YYYYMMDD",v.Local.dEnd)
+F.Intrinsic.String.Mid(V.Passed.888888.Trim,9,6,V.Local.sRunTime)
+F.Intrinsic.String.Left(V.Passed.888888.Trim,8,V.Local.sRunDate)
+
+'this is for file header
+F.Data.DataTable.Create("dtPyrl",True)
+F.Data.DataTable.AddColumn("dtPyrl","ClockIn_Date","String")
+F.Data.DataTable.AddColumn("dtPyrl","Employee","String")
+F.Data.DataTable.AddColumn("dtPyrl","PayCode","String")
+F.Data.DataTable.AddColumn("dtPyrl","TimeIn","String")
+F.Data.DataTable.AddColumn("dtPyrl","TimeOut","String")
+F.Data.DataTable.AddColumn("dtPyrl","RegHours","String")
+F.Data.DataTable.AddColumn("dtPyrl","OTHours","String")
+F.Data.DataTable.AddRow("dtPyrl","ClockIn_Date","Date","Employee","Employee ID#","PayCode","Pay Code","TimeIn","In Time","TimeOut","Out Time","RegHours","REG Hours","OTHours","OT Hours")
+
+'getting detail hours
+f.Intrinsic.String.Build("Select CHARGE_DATE,'' as ClockIn_Date,Employee,'' as PayCode,EARNINGS_CODE,DATE_IN,TIME_IN,DATE_OUT,TIME_OUT,'' as TimeIn, '' as TimeOut from V_TIME_ATTENDANCE where CHARGE_DATE between '{0}' and '{1}';",v.Local.dBeg.PervasiveDate,v.Local.dEnd.PervasiveDate,v.Local.sSQL)
+f.ODBC.Connection!con.OpenCompanyConnection
+f.Data.Datatable.CreateFromSQL("dtPyrl_EC","con",v.Local.sSQL,true)
+
+
+f.Data.Datatable.AddColumn("dtPyrl_EC","RegHours","String")
+f.Data.Datatable.AddColumn("dtPyrl_EC","OTHours","String")
+
+'calculate and format hours
+f.Intrinsic.Control.For(v.Local.iCnt,0,v.DataTable.dtPyrl_EC.RowCount--,1)
+	f.Intrinsic.String.Build("{0} {1}",v.DataTable.dtPyrl_EC(v.Local.iCnt).DATE_IN!FieldVal,v.DataTable.dtPyrl_EC(v.Local.iCnt).TIME_IN!FieldVal,v.Local.sIn)
+	f.Intrinsic.String.Build("{0} {1}",v.DataTable.dtPyrl_EC(v.Local.iCnt).DATE_OUT!FieldVal,v.DataTable.dtPyrl_EC(v.Local.iCnt).TIME_OUT!FieldVal,v.Local.sOut)
+	v.Local.sTimeIn.Set(v.DataTable.dtPyrl_EC(v.Local.iCnt).TIME_IN!FieldVal)
+	v.Local.sTimeOut.Set(v.DataTable.dtPyrl_EC(v.Local.iCnt).TIME_OUT!FieldVal)
+	'getting total worked minutes
+	f.Intrinsic.Date.DateDiff("N",v.Local.sIn,v.Local.sOut,v.Local.fMin)
+	'then convert to hours with decimals
+	f.Intrinsic.Math.Div(v.Local.fMin,60,v.Local.fHours)
+	f.Intrinsic.Math.Round(v.Local.fHours,1,v.Local.fHours)
+	f.Intrinsic.String.Format(v.DataTable.dtPyrl_EC(v.Local.iCnt).CHARGE_DATE!FieldVal,"MM/DD/YYYY",v.Local.sDate)
+	'finally set those in DT
+	f.Data.Datatable.SetValue("dtPyrl_EC",v.Local.iCnt,"RegHours",v.Local.fHours,"ClockIn_Date",v.Local.sDate,"TimeIn",v.Local.sTimeIn,"TimeOut",v.Local.sTimeOut)
+f.Intrinsic.Control.Next(v.Local.iCnt)
+
+'fill in pay code
+f.Data.Dictionary.CreateFromDatatable("dictPayCode","dtEC","EC","PayCode")
+f.Data.Dictionary.SetDefaultReturn("dictPayCode","51")
+f.Data.Datatable.FillFromDictionary("dtPyrl_EC","dictPayCode","EARNINGS_CODE","PayCode")
+
+f.Data.Datatable.RemoveColumn("dtPyrl_EC","EARNINGS_CODE")
+f.Data.Datatable.RemoveColumn("dtPyrl_EC","DATE_IN")
+f.Data.Datatable.RemoveColumn("dtPyrl_EC","DATE_OUT")
+f.Data.Datatable.RemoveColumn("dtPyrl_EC","CHARGE_DATE")
+f.Data.Datatable.RemoveColumn("dtPyrl_EC","TIME_IN")
+f.Data.Datatable.RemoveColumn("dtPyrl_EC","TIME_OUT")
+
+'We don't need Overtime for now but keep it if they need it in the future
+'F.Intrinsic.String.Build("Select distinct '' as ClockIn_Date,RTRIM(EMPLOYEE) as Employee,'' as PayCode,'' as TimeIn,'' as TimeOut,'' as RegHours,'' as OTHours from PYRL_LABOR_XFER where Run_Cymd = '{0}' and Run_Time = '{1}' and TYPE = 'OT' group by Employee;",V.Local.sRunDate,V.Local.sRunTime,V.Local.sSQL)
+'f.Data.Datatable.CreateFromSQL("dtPyrl_OT","con",v.Local.sSQL,true)
+'F.Intrinsic.String.Build("Select RTRIM(EMPLOYEE) as Employee, sum(CAST(RTRIM(hours) AS DOUBLE)) as OTHours from PYRL_LABOR_XFER where employee is not null and hours is not null and hours <> '' and Run_Cymd = '{0}' and Run_Time = '{1}' and TYPE = 'OT' group by Employee;",V.Local.sRunDate,V.Local.sRunTime,V.Local.sSQL)
+'f.Data.Dictionary.CreateFromSQL("dictOT","con",v.Local.sSQL)
+'f.Data.Dictionary.SetDefaultReturn("dictOT",0)
+'f.Data.Datatable.FillFromDictionary("dtPyrl_OT","dictOT","Employee","OTHours")
+'f.Data.Dictionary.Close("dictOT")
+'f.ODBC.Connection!con.Close
+'f.Data.Datatable.AcceptChanges("dtPyrl_OT")
+'f.Data.Datatable.AcceptChanges("dtPyrl_EC")
+'F.Data.DataTable.Merge("dtPyrl_OT","dtPyrl_EC",True,1)
+
+f.Data.DataView.Create("dtPyrl_EC","dvPyrl_EC",22,"","EMPLOYEE,ClockIn_Date ASC")
+f.Data.DataView.ToDataTable("dtPyrl_EC","dvPyrl_EC","dtFinal")
+
+F.Data.DataTable.Merge("dtFinal","dtPyrl",True,2)
+'Saving CSV file
+F.Intrinsic.UI.ShowSaveFileDialog("","csv|*.csv",V.Local.sPath)
+
+F.Intrinsic.String.Split(V.Local.sPath,".",V.Local.sPath)
+
+F.Intrinsic.String.Build("{0}.csv",V.Local.sPath(0),V.Local.sPath)
+
+F.Data.DataTable.SaveToCSV("dtPyrl",V.Local.sPath,False)
+
+F.Intrinsic.String.Build("File saved to {0}",V.Local.sPath.Trim,V.Local.sSQL)
+
+F.Intrinsic.UI.Msgbox(V.Local.sSQL,"Success!")
+
+F.Data.DataTable.Close("dtPyrl")
+f.Intrinsic.Control.End
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("Project: {0}{1}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}{1}{1}GAB Version: {5}",V.Ambient.ScriptPath,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.End 
+Program.Sub.loadData.End
+
+Program.Sub.Unload.Start
+F.Intrinsic.Control.Try
+	V.Local.sError.Declare
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("Project: {0}{1}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}{1}{1}GAB Version: {5}",V.Ambient.ScriptPath,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.End 
+Program.Sub.Unload.End
+
+Program.Sub.Comments.Start
+${$5$}$3.0.0.0$}$1
+${$6$}$bpham$}$20220506092515961$}$Di0riF4Q5RIv6jxva5zSWBaTvp+T0Dt6jKfOo+3JmO6sz0OvrFX8cUxd6XG9SL02kWXMVC/9xuw=
+Program.Sub.Comments.End
